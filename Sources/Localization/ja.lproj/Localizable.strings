@@ -598,6 +598,7 @@
 
 /* Content Types - Additional */
 "type.file" = "ファイル";
+"type.folder" = "フォルダ";
 "type.other" = "その他";
 "type.email" = "メール";
 "type.phone" = "電話番号";

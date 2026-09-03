@@ -1532,7 +1532,7 @@ struct MainWindowView: View {
     private func cardTitle(for item: ClipItem) -> String {
         switch item.contentType {
         case .link: return item.linkTitle ?? item.content
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             return URL(fileURLWithPath: item.content.components(separatedBy: "\n").first ?? "").lastPathComponent
         default:
             return item.content.components(separatedBy: .whitespacesAndNewlines)

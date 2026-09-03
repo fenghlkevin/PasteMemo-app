@@ -380,12 +380,15 @@ struct AppearancePane: View {
                     .tag("filled")
                 }
 
-                Picker(L10n.tr("settings.menuBar.leftClickAction"), selection: $menuBarLeftClickActionRaw) {
+                Picker(L10n.tr("settings.menuBar.leftClickAction"), selection: .constant(MenuBarLeftClickAction.menu.rawValue)) {
                     ForEach(MenuBarLeftClickAction.allCases, id: \.rawValue) { action in
                         Text(L10n.tr(action.l10nKey)).tag(action.rawValue)
                     }
                 }
-                .help(L10n.tr("settings.menuBar.leftClickAction.help"))
+                .disabled(true)
+                Text("系统菜单栏兼容模式：点击图标打开菜单，暂不支持自定义左键动作。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -630,6 +633,13 @@ struct QuickPanelPane: View {
                         ) {
                             selectQuickPanelPosition(.remembered)
                         }
+
+                        positionMenuItem(
+                            title: "底部横向栏",
+                            isSelected: currentPositionMode == .bottomStrip
+                        ) {
+                            selectQuickPanelPosition(.bottomStrip)
+                        }
                     } label: {
                         Text(currentPositionTitle)
                             .foregroundStyle(.primary)
@@ -683,6 +693,8 @@ struct QuickPanelPane: View {
                     ?? L10n.tr("settings.quickPanelSpecifiedScreen")
                 return "\(L10n.tr(QuickPanelPositionMode.screenCenter.titleKey)) (\(screenName))"
             }
+        case .bottomStrip:
+            return "底部横向栏"
         }
     }
 
@@ -1113,6 +1125,7 @@ struct AboutTab: View {
                     Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                         .foregroundStyle(.secondary)
                 }
+                if UpdateChecker.isEnabled {
                 Button(L10n.tr("menu.checkForUpdates")) {
                     Task { await updateChecker.checkForUpdates(userInitiated: true) }
                 }
@@ -1148,6 +1161,11 @@ struct AboutTab: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                } else {
+                    Text("此版本已停用更新检查与自动更新。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 

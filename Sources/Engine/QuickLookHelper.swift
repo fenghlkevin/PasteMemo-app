@@ -59,7 +59,7 @@ final class QuickLookHelper: NSObject, QLPreviewPanelDataSource, QLPreviewPanelD
 
     private func prepareURL(for item: ClipItem) -> URL? {
         switch item.contentType {
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             let path = item.content.components(separatedBy: "\n").first ?? ""
             let url = URL(fileURLWithPath: path)
             return FileManager.default.fileExists(atPath: path) ? url : nil

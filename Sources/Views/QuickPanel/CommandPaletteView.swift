@@ -270,7 +270,7 @@ struct CommandPaletteContent: View {
         case .text, .code, .color, .email, .phone, .mixed:
             L10n.tr("cmd.pasteAsPlainText")
         case .link: L10n.tr("cmd.openLink")
-        case .image, .file, .document, .archive, .application, .video, .audio:
+        case .image, .folder, .file, .document, .archive, .application, .video, .audio:
             L10n.tr("cmd.pastePath")
         }
     }

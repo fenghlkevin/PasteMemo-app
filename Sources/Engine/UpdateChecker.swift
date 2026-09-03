@@ -5,6 +5,8 @@ import Foundation
 @MainActor
 final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
+    /// This locally maintained build must never replace itself with an upstream release.
+    static let isEnabled = false
 
     @Published var latestVersion: String?
     @Published var updateAvailable = false
@@ -67,6 +69,7 @@ final class UpdateChecker: ObservableObject {
     // MARK: - Check
 
     func checkForUpdates(userInitiated: Bool = false) async {
+        guard Self.isEnabled else { return }
         guard userInitiated || !isDev else { return }
         if !userInitiated {
             guard UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true else { return }
@@ -167,6 +170,7 @@ final class UpdateChecker: ObservableObject {
     // MARK: - Download
 
     func downloadUpdate() {
+        guard Self.isEnabled else { return }
         guard let url = downloadURL else { return }
         startDownload(from: url)
     }
@@ -188,6 +192,7 @@ final class UpdateChecker: ObservableObject {
     // MARK: - Install
 
     func installAndRestart() {
+        guard Self.isEnabled else { return }
         guard let fileURL = downloadedFileURL else { return }
 
         let mountResult = mountDMG(at: fileURL.path)
@@ -252,6 +257,7 @@ final class UpdateChecker: ObservableObject {
     // MARK: - Periodic
 
     func startPeriodicChecks() {
+        guard Self.isEnabled else { stopPeriodicChecks(); return }
         periodicTimer?.invalidate()
         guard !isDev else { return }
         guard UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true else { return }

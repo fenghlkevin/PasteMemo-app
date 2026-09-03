@@ -35,6 +35,7 @@
 "type.code" = "Код";
 "type.color" = "Цвет";
 "type.file" = "Файл";
+"type.folder" = "Папка";
 "type.other" = "Другое";
 "type.email" = "Эл. почта";
 "type.phone" = "Телефон";

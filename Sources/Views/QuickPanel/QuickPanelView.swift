@@ -110,6 +110,9 @@ struct QuickPanelView: View {
     @AppStorage(QuickPanelSettings.lastFilterKey) private var lastFilterStorage = "all"
     @AppStorage(QuickPanelSettings.imageLayoutKey) private var imageLayoutRaw = QuickPanelImageLayout.list.rawValue
     @AppStorage(QuickPanelSettings.imageGridDensityKey) private var imageGridDensityRaw = QuickPanelImageGridDensity.medium.rawValue
+    @AppStorage(QuickPanelPositionSettings.modeKey) private var positionModeRaw = QuickPanelPositionMode.screenCenter.rawValue
+
+    private var isBottomStrip: Bool { positionModeRaw == QuickPanelPositionMode.bottomStrip.rawValue }
 
     private var secondaryRow: QuickPanelSecondaryRow {
         QuickPanelSecondaryRow(rawValue: quickPanelSecondaryRowRaw) ?? .types
@@ -280,11 +283,15 @@ struct QuickPanelView: View {
         ZStack(alignment: .top) {
         VStack(spacing: 0) {
             searchBar
-            // 标签条排除背景拖拽：否则点分类标签时窗口跟着微拖「晃动」
-            NonDraggableArea { tabBar }
-            Divider().opacity(0.3)
+            if !isBottomStrip {
+                // 标签条排除背景拖拽：否则点分类标签时窗口跟着微拖「晃动」
+                NonDraggableArea { tabBar }
+                Divider().opacity(0.3)
+            }
             if filteredItems.isEmpty {
                 emptyStateView
+            } else if isBottomStrip {
+                bottomStripView
             } else if isImageGridActive {
                 // 「图片」筛选 + 开了瀑布流：全宽网格替代列表（无右侧预览，图片面积最大）。
                 imageGridView
@@ -301,10 +308,12 @@ struct QuickPanelView: View {
                     }
                 }
             }
-            Divider().opacity(0.3)
-            footerBar
+            if !isBottomStrip {
+                Divider().opacity(0.3)
+                footerBar
+            }
         }
-        .frame(minWidth: 360, minHeight: 420)
+        .frame(minWidth: 360, minHeight: isBottomStrip ? 0 : 420)
         // Floating group suggestions overlay
         if isShowingSuggestions {
             VStack(spacing: 0) {
@@ -489,6 +498,34 @@ struct QuickPanelView: View {
             relaySplitText = nil
         }
         .localized()
+    }
+
+    private var bottomStripView: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(displayOrderItems.prefix(24), id: \.persistentModelID) { item in
+                        BottomClipCard(
+                        item: item,
+                        isSelected: selectedItemIDs.contains(item.persistentModelID),
+                        shortcutIndex: shortcutIndex(for: item)
+                    )
+                            .id(item.persistentModelID)
+                            .onTapGesture { handleItemClick(item.persistentModelID) }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .onChange(of: lastNavigatedID) {
+                guard let id = lastNavigatedID else { return }
+                withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(id, anchor: .center) }
+            }
+            .onAppear {
+                if let id = lastNavigatedID { proxy.scrollTo(id, anchor: .center) }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Search
@@ -793,6 +830,12 @@ struct QuickPanelView: View {
 
     private var searchBar: some View {
         HStack(spacing: 10) {
+            if isBottomStrip {
+                NonDraggableArea { tabBar }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 24)
+            }
+
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 18))
                 .foregroundStyle(.tertiary)
@@ -805,7 +848,8 @@ struct QuickPanelView: View {
 
             TextField(L10n.tr("quick.search"), text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 16))
+                .font(.system(size: isBottomStrip ? 13 : 16))
+                .frame(width: isBottomStrip ? 220 : nil, alignment: .leading)
                 .focused($isSearchFocused)
 
             if !searchText.isEmpty || pill != nil {
@@ -821,7 +865,22 @@ struct QuickPanelView: View {
                 .buttonStyle(.plain)
             }
 
-            Button {
+            if isBottomStrip {
+                Button {
+                    QuickPanelWindowController.shared.dismiss(force: true)
+                    AppAction.shared.openSettings?()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 16))
+                        .frame(width: 28, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L10n.tr("menu.settings"))
+                .accessibilityLabel(L10n.tr("menu.settings"))
+            }
+
+            if !isBottomStrip { Button {
                 isPanelPinned.toggle()
                 QuickPanelWindowController.shared.isPinned = isPanelPinned
             } label: {
@@ -838,21 +897,21 @@ struct QuickPanelView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help((isPanelPinned ? L10n.tr("quickPanel.unpin") : L10n.tr("quickPanel.pin")) + " (⌘T)")
+            .help((isPanelPinned ? L10n.tr("quickPanel.unpin") : L10n.tr("quickPanel.pin")) + " (⌘T)") }
 
-            Text("\(store.totalCount)")
+            if !isBottomStrip { Text("\(store.totalCount)")
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle(.tertiary)
                 .frame(minWidth: 28, minHeight: 24)
                 .padding(.horizontal, 6)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 5)) }
         }
         // 固定一个比最高 pill 略大的行高，pill 出现/消失时 HStack 不会撑高，
         // 搜索图标、下方 tabBar 都不会上下跳动
         .frame(height: 28)
-        .padding(.horizontal, 20)
-        .padding(.top, 22)
-        .padding(.bottom, 14)
+        .padding(.horizontal, isBottomStrip ? 12 : 20)
+        .padding(.top, isBottomStrip ? 10 : 22)
+        .padding(.bottom, isBottomStrip ? 8 : 14)
         // 避免 pill 出现/消失时输入框位置被 SwiftUI 默认动画插值造成的"抖动"
         .animation(nil, value: selectedFilter)
         .animation(nil, value: pill)
@@ -902,8 +961,8 @@ struct QuickPanelView: View {
                         .id(QuickFilter.aiAgent)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 8)
+                .padding(.horizontal, isBottomStrip ? 0 : 18)
+                .padding(.bottom, isBottomStrip ? 0 : 8)
             }
             .onChange(of: selectedFilter) {
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -1064,10 +1123,170 @@ struct QuickPanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Preview
+// MARK: - Preview
 
-    @ViewBuilder
-    private var previewPane: some View {
+private struct BottomClipCard: View {
+    let item: ClipItem
+    let isSelected: Bool
+    let shortcutIndex: Int?
+
+    private var preview: String {
+        String(item.content.prefix(500))
+    }
+
+    private var headerColor: Color {
+        switch item.contentType {
+        case .link: return Color(red: 0.22, green: 0.64, blue: 0.85)
+        case .text: return Color(red: 0.48, green: 0.57, blue: 0.94)
+        case .code: return .indigo
+        case .image: return Color(red: 0.63, green: 0.39, blue: 0.91)
+        case .folder: return Color(red: 0.78, green: 0.56, blue: 0.12)
+        case .video: return Color(red: 0.80, green: 0.24, blue: 0.37)
+        case .audio: return Color(red: 0.72, green: 0.30, blue: 0.57)
+        case .archive: return Color(red: 0.76, green: 0.38, blue: 0.20)
+        case .application: return Color(red: 0.18, green: 0.55, blue: 0.48)
+        case .document:
+            let ext = filePath.map { URL(fileURLWithPath: $0).pathExtension.lowercased() } ?? ""
+            if ["xls", "xlsx", "xlsm", "xlsb", "csv", "tsv", "ods", "numbers"].contains(ext) { return Color(red: 0.24, green: 0.59, blue: 0.32) }
+            if ["ppt", "pptx", "pptm", "ppsx", "key", "keynote", "odp"].contains(ext) { return .orange }
+            if ext == "pdf" { return Color(red: 0.82, green: 0.30, blue: 0.25) }
+            return Color(red: 0.25, green: 0.45, blue: 0.72)
+        case .email: return .cyan
+        case .phone: return .mint
+        case .color: return .pink
+        case .mixed: return .brown
+        case .file: return Color(red: 0.43, green: 0.48, blue: 0.54)
+        }
+    }
+
+    private var filePath: String? {
+        guard item.contentType.isFileBased, item.contentType != .image else { return nil }
+        if let path = item.resolvedFilePaths.first { return path }
+        let path = item.content.components(separatedBy: "\n").first ?? ""
+        return path.hasPrefix("/") ? path : nil
+    }
+
+    private var metadata: String {
+        if item.contentType == .image {
+            if let data = item.imageData, let size = ImageCache.shared.imageDimensions(for: data) {
+                return "\(Int(size.width)) × \(Int(size.height))"
+            }
+            return ""
+        }
+        if let filePath { return URL(fileURLWithPath: filePath).deletingLastPathComponent().path }
+        return "\(item.content.count) 字符"
+    }
+
+    private var cardTypeLabel: String {
+        guard item.contentType != .folder, let filePath else { return item.contentType.label }
+        let ext = URL(fileURLWithPath: filePath).pathExtension.uppercased()
+        return ext.isEmpty ? item.contentType.label : "\(ext) · \(item.contentType.label)"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 7) {
+                Image(systemName: item.contentType.icon)
+                    .font(.system(size: 17, weight: .medium))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cardTypeLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(item.createdAt, style: .relative)
+                        .font(.system(size: 9))
+                        .opacity(0.8)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if let icon = appIcon(forBundleID: item.sourceAppBundleID, name: item.sourceApp) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 28, height: 28)
+                        .help(item.sourceApp ?? "PasteMemo")
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 52)
+            .background(headerColor)
+
+            ZStack(alignment: .bottom) {
+            if item.contentType == .image {
+                Canvas { context, size in
+                    let tile: CGFloat = 8
+                    for row in 0...Int(size.height / tile) {
+                        for column in 0...Int(size.width / tile) where (row + column).isMultiple(of: 2) {
+                            context.fill(Path(CGRect(x: CGFloat(column) * tile, y: CGFloat(row) * tile, width: tile, height: tile)), with: .color(.primary.opacity(0.07)))
+                        }
+                    }
+                }
+                AsyncPreviewImageView(
+                    data: item.imageData,
+                    cacheKey: item.itemID,
+                    maxPixelSize: 220,
+                    cornerRadius: 0,
+                    thumbnailSize: 220,
+                    fallbackFileURL: item.imageData == nil ? item.sourceImageFileURL : nil
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+                .allowsHitTesting(false)
+                .accessibilityLabel(item.displayTitle ?? item.contentType.label)
+            } else if let filePath {
+                VStack(spacing: 10) {
+                    Image(nsImage: ImageCache.shared.fileIcon(forPath: filePath))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 54, height: 54)
+                    Text(URL(fileURLWithPath: filePath).lastPathComponent)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 25)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text(preview.isEmpty ? "[Empty]" : preview)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
+                    .lineLimit(8)
+                    .padding(12)
+                    .padding(.bottom, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+
+            HStack(spacing: 4) {
+                Text(metadata)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity)
+                if let shortcutIndex { Text("⌘\(shortcutIndex)").monospacedDigit() }
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.regularMaterial)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        }
+        .frame(width: 220, height: 212)
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isSelected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+        )
+        .shadow(color: .black.opacity(isSelected ? 0.16 : 0.08), radius: 8, y: 3)
+    }
+}
+
+@ViewBuilder
+private var previewPane: some View {
         if isMultiSelected {
             multiSelectPreview
         } else if let item = currentItem {
@@ -1261,7 +1480,7 @@ struct QuickPanelView: View {
             return L10n.tr("cmd.pasteAsPlainText")
         case .link:
             return L10n.tr("cmd.openLink")
-        case .image, .file, .document, .archive, .application, .video, .audio:
+        case .image, .folder, .file, .document, .archive, .application, .video, .audio:
             return L10n.tr("cmd.pastePath")
         }
     }
@@ -1552,6 +1771,16 @@ struct QuickPanelView: View {
             }
 
             switch Int(event.keyCode) {
+            // Bottom strip is a horizontal card browser: handle these before the
+            // text field/responder chain gets a chance to interpret the arrows.
+            case 123 where isBottomStrip:
+                moveSelection(-1, extendSelection: hasShift); return nil
+            case 124 where isBottomStrip:
+                moveSelection(1, extendSelection: hasShift); return nil
+            case 125 where isBottomStrip:
+                switchType(1); return nil
+            case 126 where isBottomStrip:
+                switchType(-1); return nil
             case 126: moveSelection(-1, extendSelection: hasShift); return nil
             case 125: moveSelection(1, extendSelection: hasShift); return nil
             case 123: switchType(-1); return nil

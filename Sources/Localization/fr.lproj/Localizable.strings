@@ -578,6 +578,7 @@ Utilisez %@ pour coller un par un.";
 
 /* Content Types */
 "type.file" = "Fichier";
+"type.folder" = "Dossier";
 "type.other" = "Autre";
 "type.email" = "Email";
 "type.phone" = "Téléphone";

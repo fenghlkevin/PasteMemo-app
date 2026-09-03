@@ -95,7 +95,7 @@ struct ClipItemRow: View {
         switch item.contentType {
         case .link: return .blue
         case .image: return .purple
-        case .file, .document: return .cyan
+        case .folder, .file, .document: return .cyan
         case .archive: return .orange
         case .application: return .indigo
         case .phone: return .mint

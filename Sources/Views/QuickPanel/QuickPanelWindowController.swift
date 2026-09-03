@@ -39,6 +39,11 @@ private class KeyablePanel: NSPanel {
     /// field's FocusState can't drag keyboard focus back to the panel while the user
     /// types in another app.
     var refuseKey = false
+    var usesScreenEdges = false
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        usesScreenEdges ? frameRect : super.constrainFrameRect(frameRect, to: screen)
+    }
 
     override var canBecomeKey: Bool { !refuseKey }
     override var canBecomeMain: Bool { !refuseKey }
@@ -80,6 +85,7 @@ final class QuickPanelWindowController {
     /// Finder」会把这两种意图混为一谈——Finder 搜索框粘贴因此完全失效（只默默建了个文件）。
     private(set) var previousFocusIsTextInput = false
     private var isWarmedUp = false
+    private var builtForBottomStrip = false
     var isPinned = false {
         didSet {
             guard isPinned != oldValue else { return }
@@ -168,6 +174,12 @@ final class QuickPanelWindowController {
         previousApp = NSWorkspace.shared.frontmostApplication
         // 必须在下面 makeKey() 之前采样：抢了 key 之后读到的可能已是面板自己的焦点。
         previousFocusIsTextInput = Self.focusIsTextInput(previousApp)
+
+        if builtForBottomStrip != (positionMode == .bottomStrip) {
+            panel?.orderOut(nil)
+            panel = nil
+            isWarmedUp = false
+        }
 
         if !isWarmedUp {
             warmUp(clipboardManager: clipboardManager, modelContainer: modelContainer)
@@ -354,7 +366,16 @@ final class QuickPanelWindowController {
     // MARK: - Panel Construction
 
     private func buildPanel(clipboardManager: ClipboardManager, modelContainer: ModelContainer) -> NSPanel {
-        let initialWidth = panelWidth
+        let isBottom = positionMode == .bottomStrip
+        builtForBottomStrip = isBottom
+        // Bottom mode is a desktop-wide surface. Use the primary display's true
+        // frame so AX window coordinates from another display cannot introduce a
+        // virtual-desktop offset on the left/right edge.
+        let bottomScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.main
+            ?? NSScreen.screenWithMouse
+        let initialWidth = isBottom ? (bottomScreen?.frame.width ?? panelWidth) : panelWidth
+        let initialHeight: CGFloat = isBottom ? 280 : panelHeight
         let state = QuickPanelLayoutState(width: initialWidth)
         self.layoutState = state
 
@@ -366,20 +387,22 @@ final class QuickPanelWindowController {
         let hosting = NSHostingController(rootView: content.ignoresSafeArea())
 
         let panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
-            styleMask: [.nonactivatingPanel, .titled, .borderless, .resizable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight),
+            styleMask: isBottom ? [.nonactivatingPanel, .borderless] : [.nonactivatingPanel, .titled, .borderless, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
+        panel.usesScreenEdges = isBottom
         // .floating(3) 离 .normal(0) 太近：作为后台非激活面板，前台 App 的普通窗口会被系统
         // 抬到同层之上，把面板盖住（剪映导出框 level=0 仍遮住面板，issue #78）。提到 .statusBar(25)
         // 拉开层差，与项目内 Toast / Maccy / Clippy 命令面板的做法一致。
         panel.level = .statusBar
         // 跨 Space / 全屏跟随，否则全屏 App 下面板不出现。项目内 Toast / Relay 都设了，唯独这里漏。
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        if isBottom { panel.collectionBehavior.insert(.stationary) }
         panel.animationBehavior = .none
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = !isBottom
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
@@ -397,19 +420,19 @@ final class QuickPanelWindowController {
         let coverView = DragOnlyView(frame: NSRect(x: 0, y: 0, width: 0, height: 1))
         coverView.autoresizingMask = [.width]
         titlebarCover.view = coverView
-        panel.addTitlebarAccessoryViewController(titlebarCover)
+        if !isBottom { panel.addTitlebarAccessoryViewController(titlebarCover) }
 
         let hostingView = hosting.view
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
 
         // Raycast 同款方案：外观锁定的系统材质（浅色外观=浅底、深色=深底，亮度
         // 不随背后内容漂移），而非 NSGlassEffectView——玻璃的最终亮度由背后内容
         // 主导且 tintColor 压不住（探针实锤：浅色外观叠黑背景，tint 1.0 仍是中灰，
         // 黑字直接糊掉），大面积文字面板在外观与背景明暗错配时必然发灰。Liquid
         // Glass 只用在系统原生支持的场景（设置窗口侧边栏、popover 材质背景）。
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight))
         container.wantsLayer = true
-        container.layer?.cornerRadius = 16
+        container.layer?.cornerRadius = isBottom ? 0 : 16
         container.layer?.masksToBounds = true
 
         let visualEffect = NSVisualEffectView(frame: container.bounds)
@@ -420,16 +443,12 @@ final class QuickPanelWindowController {
         container.addSubview(visualEffect)
 
         container.addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: container.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            hostingView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        ])
+        hostingView.frame = container.bounds
+        hostingView.autoresizingMask = [.width, .height]
         container.layoutSubtreeIfNeeded()
 
         panel.contentView = container
-        panel.minSize = NSSize(width: MIN_WIDTH, height: MIN_HEIGHT)
+        panel.minSize = NSSize(width: MIN_WIDTH, height: isBottom ? initialHeight : MIN_HEIGHT)
 
         // Save size when resized. warmUp runs once so registering here is safe;
         // we still track the token so a future rebuild path wouldn't duplicate writes.
@@ -464,6 +483,8 @@ final class QuickPanelWindowController {
             positionAtWindowCenter(panel)
         case .screenCenter:
             positionAtScreenCenter(panel)
+        case .bottomStrip:
+            positionAtBottomStrip(panel)
         }
     }
 
@@ -514,7 +535,10 @@ final class QuickPanelWindowController {
     /// side (right vs left of cursor) and vertical side (below vs above)
     /// independently — the 4 combinations cover any cursor location.
     private func positionAtCursor(_ panel: NSPanel) {
-        guard let screen = NSScreen.screenWithMouse ?? resolveTargetScreen() else { return }
+        let screen = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.main
+            ?? NSScreen.screenWithMouse
+        guard let screen else { return }
         let mouse = NSEvent.mouseLocation
         let visibleFrame = screen.visibleFrame
         let panelSize = panel.frame.size
@@ -549,7 +573,7 @@ final class QuickPanelWindowController {
             return
         }
 
-        guard let screen = resolveTargetScreen() else { return }
+        guard let screen = NSScreen.screenWithMouse ?? resolveTargetScreen() else { return }
         centerOnScreenExact(panel, screen: screen)
     }
 
@@ -571,6 +595,24 @@ final class QuickPanelWindowController {
     private func positionAtScreenCenter(_ panel: NSPanel) {
         guard let screen = resolveTargetScreen() else { return }
         centerOnScreen(panel, screen: screen)
+    }
+
+    private func positionAtBottomStrip(_ panel: NSPanel) {
+        guard let screen = resolveTargetScreen() ?? NSScreen.screenWithMouse else { return }
+        let frame = screen.frame
+        // The panel is warmed up before the active screen is known. Reconcile its
+        // width here; otherwise a secondary display (or a display with a different
+        // scale/resolution) leaves one edge offset after we move the panel.
+        // This happens before the panel is shown, so resizing does not churn the
+        // SwiftUI layout during an on-screen update.
+        var panelFrame = panel.frame
+        panelFrame.origin = frame.origin
+        panelFrame.size.width = frame.width
+        panel.setFrame(panelFrame, display: false)
+
+        // Use the ordinary status-bar level for this utility surface rather than
+        // the maximum system window level.
+        panel.level = .statusBar
     }
 
     private func resolveTargetScreen() -> NSScreen? {
@@ -722,6 +764,7 @@ final class QuickPanelWindowController {
     private var globalMouseUpMonitor: Any?
 
     private func installMoveObserver() {
+        guard positionMode != .bottomStrip else { return }
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification,
             object: panel,

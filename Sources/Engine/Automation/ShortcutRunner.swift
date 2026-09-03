@@ -207,7 +207,7 @@ enum ShortcutRunner {
             }
             // Image clip without imageData (file-path-based image): fall through to path.
             fallthrough
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             // Content is a file path (or newline-joined paths). Use the first path.
             let firstPath = content
                 .components(separatedBy: "\n")

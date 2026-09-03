@@ -8,6 +8,7 @@ enum QuickPanelPositionMode: String, CaseIterable {
     case menuBarIcon
     case windowCenter
     case screenCenter
+    case bottomStrip
 
     var titleKey: String {
         switch self {
@@ -16,6 +17,7 @@ enum QuickPanelPositionMode: String, CaseIterable {
         case .menuBarIcon: "settings.quickPanelPosition.menuBarIcon"
         case .windowCenter: "settings.quickPanelPosition.windowCenter"
         case .screenCenter: "settings.quickPanelPosition.screenCenter"
+        case .bottomStrip: "settings.quickPanelPosition.screenCenter"
         }
     }
 }

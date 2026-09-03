@@ -578,6 +578,7 @@
 
 /* Content Types - Additional */
 "type.file" = "파일";
+"type.folder" = "폴더";
 "type.other" = "기타";
 "type.email" = "이메일";
 "type.phone" = "전화번호";

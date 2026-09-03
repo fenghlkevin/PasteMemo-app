@@ -35,6 +35,7 @@
 "type.code" = "Kode";
 "type.color" = "Warna";
 "type.file" = "File";
+"type.folder" = "Folder";
 "type.other" = "Lainnya";
 "type.email" = "Email";
 "type.phone" = "Telepon";

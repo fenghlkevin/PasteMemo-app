@@ -70,7 +70,7 @@ cp "$PRODUCT_BINARY" "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 chmod +x "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ICON_FILE" "$APP_DIR/Contents/Resources/AppIcon.icns"
 for bundle in "${RESOURCE_BUNDLES[@]}"; do
-  cp -R "$bundle" "$APP_DIR/"
+  cp -R "$bundle" "$APP_DIR/Contents/Resources/"
 done
 
 CURRENT_YEAR="$(date +%Y)"

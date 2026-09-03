@@ -35,6 +35,7 @@
 "type.code" = "Codice";
 "type.color" = "Colore";
 "type.file" = "File";
+"type.folder" = "Cartella";
 "type.other" = "Altro";
 "type.email" = "Email";
 "type.phone" = "Telefono";

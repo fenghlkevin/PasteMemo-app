@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 
 /// 状态栏左键动作。右键始终弹菜单。
 enum MenuBarLeftClickAction: String, CaseIterable {
@@ -43,17 +44,29 @@ final class StatusBarController: NSObject {
 
     func install() {
         guard statusItem == nil else { return }
+        createStatusItem()
+        observeStateChanges()
+    }
+
+    private func createStatusItem() {
+        // Start new installations to the right of menu-bar folding separators.
+        // A saved user-dragged position takes precedence over this default.
+        UserDefaults.standard.register(defaults: [
+            "NSStatusItem Preferred Position PasteMemoStatusItem": 0
+        ])
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.autosaveName = "PasteMemoStatusItem"
         statusItem = item
 
         if let button = item.button {
+            button.toolTip = "PasteMemo"
+            button.setAccessibilityLabel("PasteMemo")
             button.target = self
             button.action = #selector(buttonClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         refreshIcon()
-        observeStateChanges()
     }
 
     // MARK: - Click handling
@@ -99,7 +112,7 @@ final class StatusBarController: NSObject {
 
     // MARK: - Menu construction
 
-    private func buildMenu() -> NSMenu {
+    func buildMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -230,6 +243,9 @@ final class StatusBarController: NSObject {
             relay: RelayManager.shared.isActive,
             filled: filled
         )
+        image?.isTemplate = true
+        statusItem?.button?.imagePosition = .imageOnly
+        statusItem?.isVisible = true
         statusItem?.button?.image = image
     }
 
@@ -268,6 +284,47 @@ final class StatusBarController: NSObject {
                 self?.trackRelayState()
             }
         }
+    }
+}
+
+/// Reuse the existing actions, shortcuts, enabled states and localized titles.
+/// The native scene owns the status item; this view only supplies menu content.
+struct NativeStatusMenu: View {
+    @ObservedObject private var clipboard = ClipboardManager.shared
+
+    var body: some View {
+        let menu = StatusBarController.shared.buildMenu()
+        ForEach(Array(menu.items.enumerated()), id: \.offset) { _, item in
+            if item.isSeparatorItem {
+                Divider()
+            } else {
+                Button(item.title) {
+                    guard let action = item.action else { return }
+                    NSApp.sendAction(action, to: item.target, from: item)
+                }
+                .disabled(!item.isEnabled)
+            }
+        }
+    }
+}
+
+struct NativeStatusLabel: View {
+    @ObservedObject private var clipboard = ClipboardManager.shared
+    @AppStorage("menuBarIconStyle") private var style = "outline"
+
+    var body: some View {
+        Group {
+            if let image = PasteMemoApp.menuBarIcon(
+                paused: clipboard.isPaused,
+                relay: RelayManager.shared.isActive,
+                filled: style == "filled"
+            ) {
+                Image(nsImage: image)
+            } else {
+                Image(systemName: "doc.on.clipboard")
+            }
+        }
+        .accessibilityLabel("PasteMemo")
     }
 }
 

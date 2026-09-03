@@ -796,49 +796,86 @@ final class ClipboardManager: ObservableObject {
     }
 
     private static let VIDEO_EXTENSIONS: Set<String> = [
-        "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp"
+        "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "m2ts", "mts", "vob", "ogv"
     ]
 
     private static let IMAGE_EXTENSIONS: Set<String> = [
-        "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif", "svg", "ico"
+        "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif", "svg", "ico", "avif", "jxl", "icns", "dng", "cr2", "cr3", "nef", "arw", "psd"
     ]
 
     private static let AUDIO_EXTENSIONS: Set<String> = [
-        "mp3", "wav", "aac", "flac", "m4a", "ogg", "wma", "aiff", "alac", "opus"
+        "mp3", "wav", "aac", "flac", "m4a", "ogg", "wma", "aiff", "alac", "opus", "aif", "aifc", "m4b", "caf", "mid", "midi", "ape"
     ]
 
     private static let DOCUMENT_EXTENSIONS: Set<String> = [
         "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
         "pages", "numbers", "keynote", "rtf", "rtfd",
         "csv", "tsv", "txt", "md", "markdown",
-        "odt", "ods", "odp", "epub"
+        "odt", "ods", "odp", "epub", "key", "xlsm", "xlsb", "xltx", "docm", "dotx", "pptm", "ppsx", "odg", "mobi", "azw", "azw3",
+        "json", "yaml", "yml", "xml", "toml", "ini", "conf", "log", "sql", "sh", "py", "js", "ts", "jsx", "tsx", "java", "swift", "go", "rs", "c", "h", "cpp", "hpp", "cs", "html", "css", "scss", "vue", "svelte", "ipynb"
     ]
 
     private static let ARCHIVE_EXTENSIONS: Set<String> = [
         "zip", "rar", "7z", "tar", "gz", "bz2", "xz",
-        "tgz", "tbz2", "zst", "lz", "lzma", "cab", "iso", "dmg"
+        "tgz", "tbz2", "zst", "lz", "lzma", "cab", "iso", "dmg", "txz", "bz", "lz4", "jar", "war", "ear", "xip"
     ]
 
     private static let APPLICATION_EXTENSIONS: Set<String> = [
-        "app", "pkg", "mpkg", "exe", "msi", "deb", "rpm", "apk", "ipa"
+        "app", "pkg", "mpkg", "exe", "msi", "deb", "rpm", "apk", "ipa", "msix", "appx", "appimage"
     ]
 
-    private func detectFileType(_ paths: [String]) -> ClipContentType {
-        let extensions = paths.compactMap { URL(fileURLWithPath: $0).pathExtension.lowercased() }
-        let isDir = paths.count == 1 && {
-            var isDirectory: ObjCBool = false
-            FileManager.default.fileExists(atPath: paths[0], isDirectory: &isDirectory)
-            return isDirectory.boolValue
-        }()
-        // .app bundles are directories
-        if isDir, extensions.first == "app" { return .application }
-        if extensions.allSatisfy({ Self.VIDEO_EXTENSIONS.contains($0) }) { return .video }
-        if extensions.allSatisfy({ Self.AUDIO_EXTENSIONS.contains($0) }) { return .audio }
-        if extensions.allSatisfy({ Self.IMAGE_EXTENSIONS.contains($0) }) { return .image }
-        if extensions.allSatisfy({ Self.DOCUMENT_EXTENSIONS.contains($0) }) { return .document }
-        if extensions.allSatisfy({ Self.ARCHIVE_EXTENSIONS.contains($0) }) { return .archive }
-        if extensions.allSatisfy({ Self.APPLICATION_EXTENSIONS.contains($0) }) { return .application }
-        return .file
+    func detectFileType(_ paths: [String]) -> ClipContentType {
+        guard !paths.isEmpty else { return .file }
+        let types = paths.map { path -> ClipContentType in
+            let url = URL(fileURLWithPath: path)
+            let ext = url.pathExtension.lowercased()
+            var directory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: path, isDirectory: &directory), directory.boolValue {
+                if ext == "app" { return .application }
+                let isPackage = (try? url.resourceValues(forKeys: [.isPackageKey]))?.isPackage == true
+                if !isPackage { return .folder }
+            }
+            if Self.VIDEO_EXTENSIONS.contains(ext) { return .video }
+            if Self.AUDIO_EXTENSIONS.contains(ext) { return .audio }
+            if Self.IMAGE_EXTENSIONS.contains(ext) { return .image }
+            if Self.DOCUMENT_EXTENSIONS.contains(ext) { return .document }
+            if Self.ARCHIVE_EXTENSIONS.contains(ext) { return .archive }
+            if Self.APPLICATION_EXTENSIONS.contains(ext) { return .application }
+            // System type conformance covers formats introduced by installed apps.
+            let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
+                ?? UTType(filenameExtension: ext)
+            if let type {
+                if type.conforms(to: .application) { return .application }
+                if type.conforms(to: .folder) { return .folder }
+                if type.conforms(to: .image) { return .image }
+                if type.conforms(to: .movie) { return .video }
+                if type.conforms(to: .audio) { return .audio }
+                if type.conforms(to: .archive) { return .archive }
+                if type.conforms(to: .text) || type.conforms(to: .pdf) { return .document }
+            }
+            return .file
+        }
+        return types.allSatisfy { $0 == types[0] } ? types[0] : .file
+    }
+
+    /// Reclassify old generic-file records once so existing folders are searchable
+    /// under the new category too. SwiftData stores the category as a raw string.
+    func migrateFileCategories(in context: ModelContext) {
+        let key = "fileCategoriesMigrated_v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            let records = try context.fetch(FetchDescriptor<ClipItem>(predicate: #Predicate { $0.contentTypeRaw == "file" }))
+            for item in records {
+                let paths = item.resolvedFilePaths.isEmpty
+                    ? item.content.components(separatedBy: "\n") : item.resolvedFilePaths
+                guard !paths.isEmpty, paths.allSatisfy({ $0.hasPrefix("/") }) else { continue }
+                item.contentType = detectFileType(paths)
+            }
+            try context.save()
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            DiagnosticLog.log("File category migration failed: \(error)")
+        }
     }
 
     func findExistingDuplicate(for newItem: ClipItem, in context: ModelContext) -> ClipItem? {
@@ -1284,7 +1321,7 @@ final class ClipboardManager: ObservableObject {
                     pasteboard.setString(names, forType: .string)
                 }
             }
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             if textOnly {
                 // Terminal: paste full path; Editor: paste filename
                 if terminal {

@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerDiagnosticObservers()
 
         ClipboardManager.shared.modelContainer = PasteMemoApp.sharedModelContainer
+        ClipboardManager.shared.migrateFileCategories(in: PasteMemoApp.sharedModelContainer.mainContext)
         OCRTaskCoordinator.shared.configure(modelContainer: PasteMemoApp.sharedModelContainer)
         // GC orphaned original-image cache files (deleted/expired clips, crash orphans).
         // Runs before monitoring starts so a fresh copy can't be mistaken for an orphan.
@@ -74,8 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerAppActions()
         isLaunchComplete = true
 
-        // 自定义状态栏图标（支持左/右键不同动作）—— 取代原来的 MenuBarExtra(.menu)。
-        StatusBarController.shared.install()
+        // PasteMemoApp's MenuBarExtra owns the menu-bar entry. Do not install a
+        // separate NSStatusItem here (it would produce a duplicate entry).
 
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         let needsAccessibility = !AXIsProcessTrusted()
@@ -98,11 +99,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.setActivationPolicy(.regular)
             }
             showAccessibilityPrompt()
-        }
-
-        Task {
-            await UpdateChecker.shared.checkForUpdates()
-            UpdateChecker.shared.startPeriodicChecks()
         }
 
         BackupScheduler.shared.start(container: PasteMemoApp.sharedModelContainer)

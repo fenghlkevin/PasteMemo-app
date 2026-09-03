@@ -36,6 +36,7 @@
 "type.code" = "程式碼";
 "type.color" = "顏色";
 "type.file" = "檔案";
+"type.folder" = "檔案夾";
 "type.other" = "其他";
 "type.email" = "電子郵件";
 "type.phone" = "電話";

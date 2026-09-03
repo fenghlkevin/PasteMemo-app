@@ -14,7 +14,7 @@ final class AIReadyPaste: ObservableObject {
             return formatLink(item.content)
         case .image:
             return "[Image content — paste directly]"
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             return item.content
         default:
             return formatText(item.content)

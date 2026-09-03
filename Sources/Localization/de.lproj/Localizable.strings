@@ -578,6 +578,7 @@ Verwenden Sie %@ zum Einfügen.";
 
 /* Content Types (additional) */
 "type.file" = "Datei";
+"type.folder" = "Ordner";
 "type.other" = "Sonstiges";
 "type.email" = "Email";
 "type.phone" = "Telefon";

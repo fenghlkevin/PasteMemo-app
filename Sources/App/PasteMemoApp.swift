@@ -68,10 +68,12 @@ struct PasteMemoApp: App {
                 .keyboardShortcut(",", modifiers: .command)
             }
             CommandGroup(after: .appInfo) {
+                if UpdateChecker.isEnabled {
                 Button(L10n.tr("menu.checkForUpdates")) {
                     Task { await UpdateChecker.shared.checkForUpdates(userInitiated: true) }
                 }
                 Divider()
+                }
             }
             CommandMenu(L10n.tr("relay.title")) {
                 if RelayManager.shared.isActive {
@@ -135,8 +137,14 @@ struct PasteMemoApp: App {
             }
         }
 
-        // 状态栏图标改用 AppKit 的 NSStatusItem 实现（StatusBarController），
-        // 这样能区分左/右键、支持左键自定义动作。AppDelegate 在启动时安装。
+        // Let SwiftUI own insertion and lifecycle instead of registering a second
+        // AppKit status item independently of the application's scenes.
+        MenuBarExtra(isInserted: .constant(true)) {
+            NativeStatusMenu()
+        } label: {
+            NativeStatusLabel()
+        }
+        .menuBarExtraStyle(.menu)
     }
 
     // MARK: - Menu Bar Icon
@@ -159,8 +167,14 @@ struct PasteMemoApp: App {
             }
             return true
         }
-        image.isTemplate = true
-        return image
+        // Supply actual pixels to the system menu-bar renderer rather than a
+        // deferred drawing closure (NSCustomImageRep).
+        if let data = image.tiffRepresentation, let raster = NSImage(data: data) {
+            raster.size = size
+            raster.isTemplate = true
+            return raster
+        }
+        return NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "PasteMemo")
     }
 
     private static let cardW: CGFloat = 11.0

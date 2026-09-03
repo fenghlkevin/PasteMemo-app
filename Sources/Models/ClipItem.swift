@@ -15,6 +15,7 @@ enum ClipContentType: String, Codable, CaseIterable {
     case link = "link"
     case image = "image"
     case file = "file"
+    case folder = "folder"
     case video = "video"
     case audio = "audio"
     case document = "document"
@@ -35,7 +36,7 @@ enum ClipContentType: String, Codable, CaseIterable {
     }
 
     static let defaultVisibleCases: [ClipContentType] = [
-        .text, .code, .link, .image, .video, .audio, .document, .archive, .application, .color, .file
+        .text, .code, .link, .image, .video, .audio, .document, .archive, .application, .color, .folder, .file
     ]
 
     /// Content types shown in the automation rule editor's content-type picker.
@@ -44,7 +45,7 @@ enum ClipContentType: String, Codable, CaseIterable {
     static let ruleEditorVisibleCases: [ClipContentType] = [
         .text, .code, .link, .color,
         .image, .video, .audio,
-        .document, .archive, .application, .file
+        .document, .archive, .application, .folder, .file
     ]
 
     static var visibleCases: [ClipContentType] {
@@ -71,7 +72,7 @@ enum ClipContentType: String, Codable, CaseIterable {
     /// File-based types: stored as file paths, rendered with file icons, support Finder operations
     var isFileBased: Bool {
         switch self {
-        case .file, .video, .audio, .image, .document, .archive, .application: return true
+        case .folder, .file, .video, .audio, .image, .document, .archive, .application: return true
         default: return false
         }
     }
@@ -80,7 +81,7 @@ enum ClipContentType: String, Codable, CaseIterable {
     var isMergeable: Bool {
         switch self {
         case .text, .code, .link, .color, .email, .phone: return true
-        case .image, .file, .video, .audio, .document, .archive, .application, .mixed: return false
+        case .image, .folder, .file, .video, .audio, .document, .archive, .application, .mixed: return false
         }
     }
 
@@ -91,6 +92,7 @@ enum ClipContentType: String, Codable, CaseIterable {
         case .link: return "link"
         case .image: return "photo"
         case .file: return "doc"
+        case .folder: return "folder"
         case .video: return "film"
         case .audio: return "waveform"
         case .document: return "doc.richtext"
@@ -111,6 +113,7 @@ enum ClipContentType: String, Codable, CaseIterable {
         case .link: return L10n.tr("type.link")
         case .image: return L10n.tr("type.image")
         case .file: return L10n.tr("type.other")
+        case .folder: return L10n.tr("type.folder")
         case .video: return L10n.tr("type.video")
         case .audio: return L10n.tr("type.audio")
         case .document: return L10n.tr("type.document")
@@ -250,7 +253,7 @@ final class ClipItem {
             return FileManager.default.fileExists(atPath: expanded) ? expanded : nil
         }
         switch contentType {
-        case .file, .document, .archive, .application:
+        case .folder, .file, .document, .archive, .application:
             guard content != "[Image]" else { return nil }
             let first = content.components(separatedBy: "\n").first { !$0.isEmpty }
             return first.flatMap(existingAbsolutePath)
@@ -386,7 +389,7 @@ final class ClipItem {
                 return "Image (\(Int(img.size.width))×\(Int(img.size.height)))"
             }
             return "[Image]"
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             let paths = content.components(separatedBy: "\n").filter { !$0.isEmpty }
             return fileListTitle(paths: paths)
         case .link:

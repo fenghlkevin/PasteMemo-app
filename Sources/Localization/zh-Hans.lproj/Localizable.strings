@@ -43,6 +43,7 @@
 "type.code" = "代码";
 "type.color" = "颜色";
 "type.file" = "文件";
+"type.folder" = "文件夹";
 "type.other" = "其他";
 "type.email" = "邮箱";
 "type.phone" = "手机号";

@@ -578,6 +578,7 @@ Usa %@ para pegar uno por uno.";
 
 /* Content Types - Additional */
 "type.file" = "Archivo";
+"type.folder" = "Carpeta";
 "type.other" = "Otros";
 "type.email" = "Email";
 "type.phone" = "Teléfono";

@@ -206,7 +206,7 @@ struct ClipPropertiesView: View {
         switch item.contentType {
         case .image:
             imageProperties
-        case .file, .video, .audio, .document, .archive, .application:
+        case .folder, .file, .video, .audio, .document, .archive, .application:
             fileProperties
         case .link:
             linkProperties

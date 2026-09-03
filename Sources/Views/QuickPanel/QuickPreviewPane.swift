@@ -244,7 +244,7 @@ struct QuickPreviewPane: View {
                 if isSingleVideo { videoPreview } else { filePreview }
             case .audio:
                 if isSingleFile { audioPreview } else { filePreview }
-            case .file, .document, .archive, .application:
+            case .folder, .file, .document, .archive, .application:
                 filePreview
             case .color:
                 colorPreview

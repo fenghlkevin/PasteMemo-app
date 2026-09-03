@@ -43,6 +43,7 @@
 "type.code" = "Code";
 "type.color" = "Color";
 "type.file" = "File";
+"type.folder" = "Folder";
 "type.other" = "Other";
 "type.email" = "Email";
 "type.phone" = "Phone";

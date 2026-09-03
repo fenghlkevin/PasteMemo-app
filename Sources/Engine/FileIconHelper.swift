@@ -45,6 +45,9 @@ private let imageFormatBadges: [String: String] = [
 func fileIconInfo(_ path: String) -> FileIconInfo {
     var isDir: ObjCBool = false
     if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
+        if URL(fileURLWithPath: path).pathExtension.lowercased() == "app" {
+            return FileIconInfo(symbol: "app.fill", color: .blue)
+        }
         return FileIconInfo(symbol: "folder.fill", color: .cyan)
     }
 
