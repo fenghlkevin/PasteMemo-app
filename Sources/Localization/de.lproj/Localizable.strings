@@ -938,3 +938,5 @@ Verwenden Sie %@ zum Einfügen.";
 // MARK: - List row metrics
 "meta.chars" = "%@ Zeichen";
 "meta.lines" = "%@ Zeilen";
+
+"action.pasteTextOnly" = "Nur Text einfügen";

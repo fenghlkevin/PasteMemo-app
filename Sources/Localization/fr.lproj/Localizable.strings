@@ -956,3 +956,5 @@ Utilisez %@ pour coller un par un.";
 // MARK: - List row metrics
 "meta.chars" = "%@ caractères";
 "meta.lines" = "%@ lignes";
+
+"action.pasteTextOnly" = "Coller uniquement le texte";

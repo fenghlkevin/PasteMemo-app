@@ -33,6 +33,7 @@ private let TOP_INSET_RATIO: CGFloat = 0.15
 private let SIZE_KEY = "quickPanelSize"
 private let POSITION_KEY = "quickPanelPosition"
 private let POSITION_SCREEN_KEY = "quickPanelPosition.screenID"
+private let BOTTOM_DRAWER_DURATION: TimeInterval = 0.28
 
 private class KeyablePanel: NSPanel {
     /// When true, the panel refuses to become key — used in pinned mode so the search
@@ -86,6 +87,9 @@ final class QuickPanelWindowController {
     private(set) var previousFocusIsTextInput = false
     private var isWarmedUp = false
     private var builtForBottomStrip = false
+    private var isDismissing = false
+    private var drawerAnimationGeneration = 0
+    private weak var drawerSurface: NSView?
     var isPinned = false {
         didSet {
             guard isPinned != oldValue else { return }
@@ -165,6 +169,16 @@ final class QuickPanelWindowController {
     }
 
     func show(clipboardManager: ClipboardManager, modelContainer: ModelContainer) {
+        // A second invocation during the short drawer-close animation means the
+        // user wants to reopen it. Invalidate the pending completion before it
+        // gets a chance to order the newly shown panel out again.
+        if isDismissing {
+            drawerAnimationGeneration += 1
+            panel?.orderOut(nil)
+            panel?.ignoresMouseEvents = false
+            (panel as? KeyablePanel)?.refuseKey = isPinned
+            isDismissing = false
+        }
         if let existing = panel, existing.isVisible {
             // 再次按开关热键 = 用户主动关闭，置顶时也要关
             dismiss(force: true)
@@ -191,7 +205,18 @@ final class QuickPanelWindowController {
 
         let shouldAnimate = isLaunchAnimationEnabled
 
-        if shouldAnimate {
+        let isBottomDrawer = positionMode == .bottomStrip
+
+        if shouldAnimate, isBottomDrawer {
+            // Keep the window stationary; Core Animation composites the drawer
+            // without asking AppKit to move and redraw a full-width window per frame.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            drawerSurface?.layer?.removeAnimation(forKey: "drawer")
+            drawerSurface?.layer?.transform = CATransform3DMakeTranslation(0, -panel.frame.height, 0)
+            CATransaction.commit()
+            panel.alphaValue = 1
+        } else if shouldAnimate {
             // 起始状态：alpha 0 + scale 0.995（极轻微缩放）
             panel.alphaValue = 0
             if let layer = panel.contentView?.layer {
@@ -202,6 +227,8 @@ final class QuickPanelWindowController {
                 CATransaction.commit()
             }
         } else {
+            drawerSurface?.layer?.removeAnimation(forKey: "drawer")
+            drawerSurface?.layer?.transform = CATransform3DIdentity
             panel.alphaValue = 1
             if let layer = panel.contentView?.layer {
                 CATransaction.begin()
@@ -215,7 +242,10 @@ final class QuickPanelWindowController {
         panel.orderFrontRegardless()
         panel.makeKey()
 
-        if shouldAnimate {
+        if shouldAnimate, isBottomDrawer {
+            drawerAnimationGeneration += 1
+            animateDrawer(to: 0)
+        } else if shouldAnimate {
             // 动画到 alpha 1 + scale 1.0（仅作轻微空间引导，时长 0.1s）
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.1
@@ -277,6 +307,7 @@ final class QuickPanelWindowController {
     /// - Parameter force: 置顶时，粘贴/复制完成的收尾调用（`force == false`）不关闭面板，
     ///   让用户连续操作；只有用户主动关闭（Esc / 再次按开关热键 / 关闭按钮等）才传 `force: true`。
     func dismiss(force: Bool = false) {
+        guard !isDismissing else { return }
         if isPinned && !force { return }
         isPinned = false
         removeClickOutsideMonitor()
@@ -298,16 +329,66 @@ final class QuickPanelWindowController {
         }
         // 先通知视图清理状态（搜索文本、pill 等），强制 SwiftUI 完成一次重绘后再隐藏 panel；
         // 这样下次打开时首帧是干净状态，不会闪现上次的 `/` 建议浮层
-        NotificationCenter.default.post(name: .quickPanelWillDismiss, object: nil)
-        panel.contentView?.layoutSubtreeIfNeeded()
-        panel.displayIfNeeded()
+        if !(builtForBottomStrip && isLaunchAnimationEnabled) {
+            NotificationCenter.default.post(name: .quickPanelWillDismiss, object: nil)
+            panel.contentView?.layoutSubtreeIfNeeded()
+            panel.displayIfNeeded()
+        }
         // 焦点交还只发生在用户主动关闭（Esc/热键，force=true）。点击外部时
         // （force=false）系统正在激活用户点的 App，我们再 activate(previousApp)
         // 会跟它抢前台——两个激活来回切就是「面板消失时闪来闪去」，且竞态赢了
         // 还会把焦点从用户点的 App 拉回旧 App。粘贴路径不依赖这里：
         // dismissAndPaste 自己 activate 目标 App。
-        orderOutAvoidingKeyProposal(panel, restoreFocus: force)
+        if positionMode == .bottomStrip, isLaunchAnimationEnabled {
+            dismissBottomDrawer(panel, restoreFocus: force)
+        } else {
+            orderOutAvoidingKeyProposal(panel, restoreFocus: force)
+        }
         HotkeyManager.shared.isQuickPanelVisible = false
+    }
+
+    private func dismissBottomDrawer(_ panel: NSPanel, restoreFocus: Bool) {
+        drawerAnimationGeneration += 1
+        let generation = drawerAnimationGeneration
+        isDismissing = true
+
+        // Release key-window eligibility before animating. This keeps Tahoe's
+        // window coordinator from stalling when the panel is finally ordered out.
+        let keyable = panel as? KeyablePanel
+        keyable?.refuseKey = true
+        if restoreFocus {
+            previousApp?.activate(options: [])
+        }
+
+        panel.ignoresMouseEvents = true
+        animateDrawer(to: -panel.frame.height) { [weak self, weak panel] in
+            Task { @MainActor in
+                guard let self, let panel,
+                      self.drawerAnimationGeneration == generation else { return }
+                panel.orderOut(nil)
+                panel.ignoresMouseEvents = false
+                NotificationCenter.default.post(name: .quickPanelWillDismiss, object: nil)
+                keyable?.refuseKey = self.isPinned
+                self.isDismissing = false
+            }
+        }
+    }
+
+    private func animateDrawer(to offset: CGFloat, completion: (() -> Void)? = nil) {
+        guard let layer = drawerSurface?.layer else { completion?(); return }
+        let current = layer.presentation()?.transform ?? layer.transform
+        let target = CATransform3DMakeTranslation(0, offset, 0)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock(completion)
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = current
+        animation.toValue = target
+        animation.duration = BOTTOM_DRAWER_DURATION
+        animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.75, 0.25, 1)
+        layer.transform = target
+        layer.add(animation, forKey: "drawer")
+        CATransaction.commit()
     }
 
     /// macOS 26 (Tahoe) 的窗口协调器（NSWMWindowCoordinator）在 orderOut 一个**可成为
@@ -360,7 +441,7 @@ final class QuickPanelWindowController {
     }
 
     var isVisible: Bool {
-        panel?.isVisible ?? false
+        (panel?.isVisible ?? false) && !isDismissing
     }
 
     // MARK: - Panel Construction
@@ -398,8 +479,9 @@ final class QuickPanelWindowController {
         // 抬到同层之上，把面板盖住（剪映导出框 level=0 仍遮住面板，issue #78）。提到 .statusBar(25)
         // 拉开层差，与项目内 Toast / Maccy / Clippy 命令面板的做法一致。
         panel.level = .statusBar
-        // 跨 Space / 全屏跟随，否则全屏 App 下面板不出现。项目内 Toast / Relay 都设了，唯独这里漏。
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Joining Spaces alone does not explicitly opt this overlay into other
+        // applications' full-screen spaces (or Stage Manager sets).
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         if isBottom { panel.collectionBehavior.insert(.stationary) }
         panel.animationBehavior = .none
         panel.isMovableByWindowBackground = !isBottom
@@ -447,7 +529,18 @@ final class QuickPanelWindowController {
         hostingView.autoresizingMask = [.width, .height]
         container.layoutSubtreeIfNeeded()
 
-        panel.contentView = container
+        if isBottom {
+            let clipView = NSView(frame: container.frame)
+            clipView.wantsLayer = true
+            clipView.layer?.masksToBounds = true
+            container.autoresizingMask = [.width, .height]
+            clipView.addSubview(container)
+            drawerSurface = container
+            panel.contentView = clipView
+            panel.hasShadow = false
+        } else {
+            panel.contentView = container
+        }
         panel.minSize = NSSize(width: MIN_WIDTH, height: isBottom ? initialHeight : MIN_HEIGHT)
 
         // Save size when resized. warmUp runs once so registering here is safe;

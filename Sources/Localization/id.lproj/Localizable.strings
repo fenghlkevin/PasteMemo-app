@@ -926,3 +926,5 @@ Gunakan %@ untuk menempel satu per satu.";
 // MARK: - List row metrics
 "meta.chars" = "%@ karakter";
 "meta.lines" = "%@ baris";
+
+"action.pasteTextOnly" = "Tempel Teks Saja";

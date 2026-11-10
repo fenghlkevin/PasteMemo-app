@@ -503,15 +503,54 @@ struct QuickPanelView: View {
     private var bottomStripView: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(displayOrderItems.prefix(24), id: \.persistentModelID) { item in
-                        BottomClipCard(
-                        item: item,
-                        isSelected: selectedItemIDs.contains(item.persistentModelID),
-                        shortcutIndex: shortcutIndex(for: item)
-                    )
+                LazyHStack(spacing: 10) {
+                    ForEach(displayOrderItems, id: \.persistentModelID) { item in
+                        NativeContextMenu(
+                            content: BottomClipCard(
+                                item: item,
+                                isSelected: selectedItemIDs.contains(item.persistentModelID),
+                                shortcutIndex: shortcutIndex(for: item)
+                            ),
+                            onClick: { handleItemClick(item.persistentModelID) },
+                            actions: {
+                                let items = selectedItemIDs.contains(item.persistentModelID) && isMultiSelected
+                                    ? currentItems : [item]
+                                return [
+                                    .init(title: L10n.tr("action.paste"), keyEquivalent: "\r") {
+                                        if !selectedItemIDs.contains(item.persistentModelID) {
+                                            selectItem(item.persistentModelID)
+                                        }
+                                        if isMultiSelected {
+                                            handleMultiPaste(asPlainText: false, respectAutoPaste: false)
+                                        } else {
+                                            handlePaste(respectAutoPaste: false)
+                                        }
+                                    },
+                                    .init(title: L10n.tr("action.pasteTextOnly"), keyEquivalent: "v", modifiers: [.command, .shift]) {
+                                        pasteTextOnlyItems(items)
+                                    },
+                                    .init(title: item.isPinned ? L10n.tr("action.unpin") : L10n.tr("action.pin"), keyEquivalent: "p", modifiers: [.command, .shift]) {
+                                        let shouldPin = !items.contains(where: \.isPinned)
+                                        for clip in items { clip.isPinned = shouldPin }
+                                        ClipItemStore.saveAndNotify(modelContext)
+                                    },
+                                    .init(title: L10n.tr("action.delete"), keyEquivalent: "\u{8}", modifiers: .command) {
+                                        deleteItems(items)
+                                    }
+                                ]
+                            }
+                        )
+                            .frame(width: 220, height: 212)
                             .id(item.persistentModelID)
-                            .onTapGesture { handleItemClick(item.persistentModelID) }
+                            .onAppear {
+                                // The regular vertical list loads its next page when its
+                                // tail becomes visible. Bottom-strip mode needs the same
+                                // trigger; otherwise it stops after the initially hydrated
+                                // records (and previously had an additional hard cap of 24).
+                                if item.persistentModelID == displayOrderItems.last?.persistentModelID {
+                                    store.loadMore()
+                                }
+                            }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -1509,7 +1548,10 @@ private var previewPane: some View {
             let items = currentItems
             // 复制置顶，与主窗口右键菜单一致
             Button(L10n.tr("action.mergeCopy")) {
-                copyItemsToClipboard(items)
+                copyItemsFullFidelity(items)
+            }
+            Button(L10n.tr("action.pasteTextOnly")) {
+                pasteTextOnlyItems(items)
             }
             let hasPinned = items.contains(where: \.isPinned)
             Button(hasPinned ? L10n.tr("action.unpin") : L10n.tr("action.pin")) {
@@ -1541,8 +1583,11 @@ private var previewPane: some View {
         } else {
             // 复制置顶，与主窗口右键菜单一致
             Button(L10n.tr("action.mergeCopy")) {
-                copyItemsToClipboard([item])
+                copyItemsFullFidelity([item])
                 selectItem(itemID)
+            }
+            Button(L10n.tr("action.pasteTextOnly")) {
+                pasteTextOnlyItems([item])
             }
             Button(item.isPinned ? L10n.tr("action.unpin") : L10n.tr("action.pin")) {
                 item.isPinned.toggle()
@@ -1792,6 +1837,13 @@ private var previewPane: some View {
                 }
                 return event
             case 35:
+                if isBottomStrip, hasCmd, hasShift {
+                    let items = currentItems
+                    let shouldPin = !items.contains(where: \.isPinned)
+                    for item in items { item.isPinned = shouldPin }
+                    ClipItemStore.saveAndNotify(modelContext)
+                    return nil
+                }
                 if hasControl && !hasCmd {
                     moveSelection(-1, extendSelection: hasShift)
                     return nil
@@ -1850,6 +1902,9 @@ private var previewPane: some View {
                     return nil
                 }
                 return event
+            case 9 where isBottomStrip && hasCmd && hasShift:
+                pasteTextOnlyItems(currentItems)
+                return nil
             case 8: // Cmd+C
                 if hasCmd {
                     // Check if preview area has text selected
@@ -2650,6 +2705,15 @@ private var previewPane: some View {
         SoundManager.playCopy()
         QuickPanelWindowController.shared.dismiss()
         ToastCenter.shared.show(ToastDescriptor(message: L10n.tr("action.copied"), icon: .success))
+    }
+
+    private func pasteTextOnlyItems(_ items: [ClipItem]) {
+        guard !items.isEmpty else { return }
+        QuickPanelWindowController.shared.refreshTargetFocusIfPinned()
+        bumpLastUsedPreservingOrder(items)
+        dismissAndRestoreApp { app in
+            clipboardManager.pasteAsPlainText(items.map(\.content).joined(separator: "\n"), targetApp: app)
+        }
     }
 
     private func handlePlainTextPaste(_ item: ClipItem) {

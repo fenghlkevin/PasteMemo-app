@@ -900,3 +900,5 @@
 // MARK: - List row metrics
 "meta.chars" = "%@ 字";
 "meta.lines" = "%@ 行";
+
+"action.pasteTextOnly" = "仅粘贴文本";

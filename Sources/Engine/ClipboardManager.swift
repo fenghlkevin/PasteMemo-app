@@ -1283,43 +1283,12 @@ final class ClipboardManager: ObservableObject {
                     }
                 }
             } else {
-                // writeObjects clears the pasteboard on each call, so combine URLs + image into a
-                // single writeObjects invocation. Otherwise the URL disappears and apps like Word
-                // fall back to pasting the filename string instead of embedding the image.
                 let paths: [String] = item.content == "[Image]"
                     ? []
                     : item.content.components(separatedBy: "\n").filter { !$0.isEmpty }
-                let hasFiles = !paths.isEmpty
-
-                // For file-backed clips we re-read the original file at paste time so
-                // pixel-only targets (Claude Code, Slack, browsers, Electron apps that
-                // can't follow a file URL) get the full original image rather than the
-                // small thumbnail kept in storage. Falls back to the stored bytes if
-                // the source file is gone or oversized.
-                let pasteImageData = item.imageBytesForExport()
-
-                var writables: [NSPasteboardWriting] = paths.map { URL(fileURLWithPath: $0) as NSURL }
-                if let data = pasteImageData, let image = NSImage(data: data) {
-                    writables.append(image)
-                }
-                if !writables.isEmpty {
-                    pasteboard.writeObjects(writables)
-                }
-
-                // Legacy file-names pboard type for apps that still read it.
-                if hasFiles {
-                    let pboardType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
-                    pasteboard.setPropertyList(paths, forType: pboardType)
-                }
-                // Raw bytes for apps that don't read NSImage.
-                if writables.first(where: { $0 is NSImage }) == nil,
-                   let data = pasteImageData {
-                    pasteboard.setData(data, forType: .png)
-                }
-                // Text fallback filename for unknown apps.
-                if hasFiles, let names = filenamesFromContent(item.content) {
-                    pasteboard.setString(names, forType: .string)
-                }
+                // Keep pixels on the first file item: consumers may inspect only that item.
+                // A synthetic filename string makes image-capable targets paste text instead.
+                writeImageToPasteboard(pasteboard, data: item.imageBytesForExport(), paths: paths)
             }
         case .folder, .file, .video, .audio, .document, .archive, .application:
             if textOnly {
@@ -1409,6 +1378,23 @@ final class ClipboardManager: ObservableObject {
         pasteboard.markAsPasteMemoWrite()
         lastChangeCount = NSPasteboard.general.changeCount
         skipRelayMonitorIfActive()
+    }
+
+    /// File URLs and pixel representations describe the same image, not separate items.
+    /// Preserve file copying while allowing image consumers to read the first item's pixels.
+    func writeImageToPasteboard(_ pasteboard: NSPasteboard, data: Data?, paths: [String]) {
+        if !paths.isEmpty {
+            writeFileURLsToPasteboard(pasteboard, paths: paths)
+        }
+        guard let data, let image = NSImage(data: data),
+              let tiff = image.tiffRepresentation else { return }
+        pasteboard.setData(tiff, forType: .tiff)
+        if Self.sniffImageExtension(from: data) == "png" {
+            pasteboard.setData(data, forType: .png)
+        } else if let bitmap = NSBitmapImageRep(data: tiff),
+                  let png = bitmap.representation(using: .png, properties: [:]) {
+            pasteboard.setData(png, forType: .png)
+        }
     }
 
     func writeFileURLsToPasteboard(_ pasteboard: NSPasteboard, paths: [String]) {

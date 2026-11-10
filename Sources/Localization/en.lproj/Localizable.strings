@@ -900,3 +900,5 @@
 // MARK: - List row metrics
 "meta.chars" = "%@ chars";
 "meta.lines" = "%@ lines";
+
+"action.pasteTextOnly" = "Paste Text Only";

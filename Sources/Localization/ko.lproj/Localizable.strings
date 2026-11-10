@@ -954,3 +954,5 @@
 // MARK: - List row metrics
 "meta.chars" = "%@자";
 "meta.lines" = "%@줄";
+
+"action.pasteTextOnly" = "텍스트만 붙여넣기";

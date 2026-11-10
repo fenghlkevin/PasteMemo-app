@@ -926,3 +926,5 @@
 // MARK: - List row metrics
 "meta.chars" = "%@ симв.";
 "meta.lines" = "%@ строк";
+
+"action.pasteTextOnly" = "Вставить только текст";

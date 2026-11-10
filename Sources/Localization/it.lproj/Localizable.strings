@@ -916,3 +916,5 @@ Usa %@ per incollare uno per uno.";
 // MARK: - List row metrics
 "meta.chars" = "%@ caratteri";
 "meta.lines" = "%@ righe";
+
+"action.pasteTextOnly" = "Incolla solo testo";

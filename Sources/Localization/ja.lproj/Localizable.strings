@@ -952,3 +952,5 @@
 // MARK: - List row metrics
 "meta.chars" = "%@ 文字";
 "meta.lines" = "%@ 行";
+
+"action.pasteTextOnly" = "テキストのみ貼り付け";

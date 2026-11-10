@@ -956,3 +956,5 @@ Usa %@ para pegar uno por uno.";
 // MARK: - List row metrics
 "meta.chars" = "%@ caracteres";
 "meta.lines" = "%@ líneas";
+
+"action.pasteTextOnly" = "Pegar solo texto";

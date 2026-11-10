@@ -12,8 +12,6 @@ ARCH="${ARCH:-$(uname -m)}"
 CONFIGURATION="${CONFIGURATION:-release}"
 BUNDLE_ID="${BUNDLE_ID:-$DEFAULT_BUNDLE_ID}"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
-BUILD_DIR="$ROOT_DIR/.build/${ARCH}-apple-macosx/${CONFIGURATION}"
-PRODUCT_BINARY="$BUILD_DIR/$EXECUTABLE_NAME"
 ICON_FILE="$ROOT_DIR/Sources/Resources/AppIcon.icns"
 
 resolve_version() {
@@ -43,7 +41,11 @@ DMG_PATH="$DIST_DIR/${APP_NAME}-${VERSION}-${ARCH}.dmg"
 STAGING_DIR="$DIST_DIR/.dmg-staging"
 
 printf '[package] building %s %s (%s)\n' "$APP_NAME" "$VERSION" "$ARCH"
-swift build -c "$CONFIGURATION" --arch "$ARCH"
+swift build --package-path "$ROOT_DIR" -c "$CONFIGURATION" --arch "$ARCH"
+# SwiftPM's output layout varies with the selected build system/toolchain.
+# Resolve it after building rather than accidentally packaging a stale binary.
+BUILD_DIR="$(swift build --package-path "$ROOT_DIR" -c "$CONFIGURATION" --arch "$ARCH" --show-bin-path)"
+PRODUCT_BINARY="$BUILD_DIR/$EXECUTABLE_NAME"
 
 if [[ ! -x "$PRODUCT_BINARY" ]]; then
   echo "Built binary not found: $PRODUCT_BINARY" >&2
